@@ -14,7 +14,9 @@ from typing import Dict, Any
 import wandb
 from tqdm import tqdm
 
-from scripts.dataloader import TwoTowerDataset, dataloader, collate_fn
+from scripts.dataloader import train_loader, val_loader, test_loader
+from torch.utils.data import DataLoader # for type hinting
+
 from scripts.config import (
     EMBEDDINGS_PATH,
     PAD_IDX,
@@ -245,18 +247,65 @@ def gap_inbatch(q_emb: torch.Tensor,
         gaps.append(pos_sim - neg_sims)
     return torch.stack(gaps).mean().item()
 
+# eval function for jsut a single batch
+def eval_one_batch(
+    batch: Dict[str, torch.Tensor],
+    model: nn.Module,
+    loss_fn: nn.TripletMarginLoss
+) -> Dict[str, float]:
+    model.eval()
+    q, ql = batch["query"].to(DEVICE), batch["query_lengths"].to(DEVICE)
+    p, pl = batch["passages"].to(DEVICE), batch["passage_lengths"].to(DEVICE)
+    with torch.no_grad():
+        q_emb, p_emb = model(q, ql, p, pl)
+        loss = full_batch_triplet_loss(q_emb, p_emb, loss_fn).item()
+        qn, pn = F.normalize(q_emb, dim=1), F.normalize(p_emb, dim=2)
+        r1 = recall_at_k_inbatch(qn, pn, k=1, num_negs=50)
+        r5 = recall_at_k_inbatch(qn, pn, k=5, num_negs=50)
+        g  = gap_inbatch(qn, pn, num_negs=50)
+    model.train()
+    return {"loss": loss, "recall@1": r1, "recall@5": r5, "gap": g}
 
-# ─── 7. Putting it all together ───────────────────────────────────────────────
-if __name__ == "__main__":
-    # 1) Load pretrained embeddings
+# Eval function o hwole val adn test set
+def evaluate(loader: DataLoader,
+             model: nn.Module,
+             loss_fn: nn.TripletMarginLoss) -> Dict[str, float]:
+  """
+  Run one pass over loader and return average metrics.
+  """
+  model.eval()
+  losses, r1s, r5s, gaps = [], [], [], []
+  with torch.no_grad():
+    for batch in loader:
+      q, ql = batch["query"].to(DEVICE), batch["query_lengths"].to(DEVICE)
+      p, pl = batch["passages"].to(DEVICE), batch["passage_lengths"].to(DEVICE)
+      q_emb, p_emb = model(q, ql, p, pl)
+      losses.append(full_batch_triplet_loss(q_emb, p_emb, loss_fn).item())
+      qn, pn = F.normalize(q_emb, dim=1), F.normalize(p_emb, dim=2)
+      r1s.append(recall_at_k_inbatch(qn, pn, k=1, num_negs=50))
+      r5s.append(recall_at_k_inbatch(qn, pn, k=5, num_negs=50))
+      gaps.append(gap_inbatch(qn, pn, num_negs=50))
+  model.train()
+  return {
+    "loss":    sum(losses) / len(losses),
+    "recall@1": sum(r1s)    / len(r1s),
+    "recall@5": sum(r5s)    / len(r5s),
+    "gap":      sum(gaps)   / len(gaps),
+  }
+
+def main() -> None:
+    """Train two-tower with periodic batch-eval and end-of-epoch full eval."""
+    # 1) Load embeddings, build model/optimizer/loss
     emb_matrix = np.load(EMBEDDINGS_PATH)
-
-    # 2) Build model, optimizer, loss
-    model     = TwoTowerModel(emb_matrix).to(DEVICE)
+    model = TwoTowerModel(emb_matrix).to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    loss_fn   = nn.TripletMarginLoss(margin=MARGIN)
+    loss_fn = nn.TripletMarginLoss(margin=MARGIN)
 
-    # 3) Init wandb
+    # 2) Prepare single-batch iterators for on-the-fly eval
+    val_iter = iter(val_loader)
+    test_iter = iter(test_loader)
+
+    # 3) Init WandB
     wandb.init(
         project=WANDB_PROJECT,
         config={
@@ -264,24 +313,22 @@ if __name__ == "__main__":
             "batch_size": BATCH_SIZE,
             "margin": MARGIN,
             "hidden_size": HIDDEN_SIZE,
-        }
+        },
     )
 
-    # 4) Main training loop (per-batch logging + multi-neg loss)
+    step = 0
     for epoch in range(1, EPOCHS + 1):
         model.train()
         epoch_loss = 0.0
 
-        for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch}")):
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch}"):
+            step += 1
             # move to device
-            q   = batch["query"].to(DEVICE)
-            ql  = batch["query_lengths"].to(DEVICE)
-            p   = batch["passages"].to(DEVICE)
-            pl  = batch["passage_lengths"].to(DEVICE)
+            q, ql = batch["query"].to(DEVICE), batch["query_lengths"].to(DEVICE)
+            p, pl = batch["passages"].to(DEVICE), batch["passage_lengths"].to(DEVICE)
 
-            # encode + normalise
+            # forward + loss
             q_emb, p_emb = model(q, ql, p, pl)
-            # compute *all-nine* negative loss
             loss = full_batch_triplet_loss(q_emb, p_emb, loss_fn)
 
             # backward + step
@@ -291,33 +338,73 @@ if __name__ == "__main__":
 
             epoch_loss += loss.item()
 
-            # For metrics, normalise to be cosine‐style:
-            qn = F.normalize(q_emb, dim=1)
-            pn = F.normalize(p_emb, dim=2)
-
-            # 3) Compute in-batch recall@k and gap
-            rec1 = recall_at_k_inbatch(qn, pn, k=1, num_negs=50)  # e.g. sample 50 negatives
+            # compute train metrics
+            qn, pn = F.normalize(q_emb, dim=1), F.normalize(p_emb, dim=2)
+            rec1 = recall_at_k_inbatch(qn, pn, k=1, num_negs=50)
             rec5 = recall_at_k_inbatch(qn, pn, k=5, num_negs=50)
-            gap  = gap_inbatch(qn, pn, num_negs=50)
+            gap = gap_inbatch(qn, pn, num_negs=50)
 
+            # assemble train logs
+            logs: Dict[str, float] = {
+                "loss/train": loss.item(),
+                "recall@1/train": rec1,
+                "recall@5/train": rec5,
+                "gap/train": gap,
+            }
 
-            # log per batch
-            wandb.log({
-                "epoch":      epoch,
-                "batch_idx":  batch_idx,
-                "batch_loss": loss.item(),
-                "recall@1":   rec1,
-                "recall@5":   rec5,
-                "gap":        gap,
-            })
+            # every 50 steps, grab one batch from val & test and eval
+            if step % 50 == 0:
+                try:
+                    vb = next(val_iter)
+                except StopIteration:
+                    val_iter = iter(val_loader)
+                    vb = next(val_iter)
 
-        avg_loss = epoch_loss / len(dataloader)
+                try:
+                    tb = next(test_iter)
+                except StopIteration:
+                    test_iter = iter(test_loader)
+                    tb = next(test_iter)
+
+                val_m = eval_one_batch(vb, model, loss_fn)
+                test_m = eval_one_batch(tb, model, loss_fn)
+
+                logs.update({
+                    "loss/val": val_m["loss"],
+                    "recall@1/val": val_m["recall@1"],
+                    "recall@5/val": val_m["recall@5"],
+                    "gap/val": val_m["gap"],
+                    "loss/test": test_m["loss"],
+                    "recall@1/test": test_m["recall@1"],
+                    "recall@5/test": test_m["recall@5"],
+                    "gap/test": test_m["gap"],
+                })
+
+            # log everything under same step
+            wandb.log(logs, step=step)
+
+        avg_loss = epoch_loss / len(train_loader)
         print(f"Epoch {epoch} done — avg loss {avg_loss:.4f}")
 
-    # 5) Save final checkpoint
-    torch.save(
-        model.state_dict(),
-        os.path.join(SAVE_DIR, "two_tower_final.pt")
-    )
+        # end-of-epoch full eval
+        full_val = evaluate(val_loader, model, loss_fn)
+        full_test = evaluate(test_loader, model, loss_fn)
+        wandb.log({
+            **{f"loss/val": full_val["loss"],
+               f"recall@1/val": full_val["recall@1"],
+               f"recall@5/val": full_val["recall@5"],
+               f"gap/val": full_val["gap"]},
+            **{f"loss/test": full_test["loss"],
+               f"recall@1/test": full_test["recall@1"],
+               f"recall@5/test": full_test["recall@5"],
+               f"gap/test": full_test["gap"]},
+        }, step=step)
+
+    # 5) Save and finish
+    torch.save(model.state_dict(), os.path.join(SAVE_DIR, "two_tower_final.pt"))
+    wandb.finish()
 
 
+if __name__ == "__main__":
+    main()
+    print("Training complete. Checkpoints saved to:", SAVE_DIR)

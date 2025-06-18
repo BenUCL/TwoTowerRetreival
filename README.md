@@ -64,6 +64,7 @@ We save the splits as parquet in `data/`.
 - Pretrained GloVe embeddings: `glove.6B.200d.txt`
 - We added `<pad>` (zero vector) and `<unk>` (mean embedding) tokens to the end.
 - Process done in `notebooks/add_tokens.ipynb`.
+- nltk is used to do tokenizing of inputs. It nicely splits into words and puncutation.
 
 ---
 

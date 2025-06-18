@@ -40,7 +40,7 @@ FREEZE_EMBEDDINGS: bool   = False
 # ─── 6. Training hyperparameters ─────────────────────────────────────────────
 LR: float     = 1e-3
 MARGIN: float = 1.0
-EPOCHS: int   = 5
+EPOCHS: int   = 1
 
 # ─── 7. Device configuration ─────────────────────────────────────────────────
 DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -21,3 +21,6 @@ dependencies:
   - pytorch-cuda=11.8    # Change cuda version to match the model of GPU
   - pyarrow              # for parquet support
   - fastparquet          # optional alternative backend
+  - nltk               # tokenisation for data loader
+  - wandb
+

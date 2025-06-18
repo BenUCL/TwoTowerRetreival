@@ -108,10 +108,28 @@ def collate_fn(batch):
 
 # 6. DataLoader
 dataset  = TwoTowerDataset(PARQUET_PATH)
-dataloader = DataLoader(
+train_loader = DataLoader(
     dataset,
     batch_size=BATCH_SIZE,
     shuffle=True,
+    num_workers=NUM_WORKERS,
+    pin_memory=True,
+    collate_fn=collate_fn
+)
+
+# validation & test loaders
+val_loader = DataLoader(
+    TwoTowerDataset(PARQUET_PATH.replace("train", "validation")),
+    batch_size=BATCH_SIZE,
+    shuffle=False,
+    num_workers=NUM_WORKERS,
+    pin_memory=True,
+    collate_fn=collate_fn
+)
+test_loader = DataLoader(
+    TwoTowerDataset(PARQUET_PATH.replace("train", "test")),
+    batch_size=BATCH_SIZE,
+    shuffle=False,
     num_workers=NUM_WORKERS,
     pin_memory=True,
     collate_fn=collate_fn
