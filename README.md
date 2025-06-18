@@ -88,11 +88,11 @@ See the notebooks section below for instructions on how to download this.
 
 ## 🔡 Vocab & Embeddings
 
+We use GloVe: precomputed embedings for common tokens. It comes with embeddings and a token mapping. We add the additional <pad> and <unk> tokens in `notebooks/add_tokens.ipynb`. The nltk library is then used to split language up into tokens and these the precomputed embeddings are used as the input layer to the model. We allow this layer to train during model training.
+
 - **GloVe**: `glove.6B.200d.txt` from Stanford NLP.
 - ``: N×200 float matrix = GloVe rows + `<pad>` + `<unk>`.
 - ``: Python dict mapping token→row index in embeddings.
-
-Token additions handled in `notebooks/add_tokens.ipynb`.
 
 ---
 
