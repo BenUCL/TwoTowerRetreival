@@ -387,7 +387,7 @@ def main() -> None:
         print(f"Epoch {epoch} done — avg loss {avg_loss:.4f}")
 
         # Save checkpoint immediately
-        ckpt_path = os.path.join(SAVE_DIR, f"ckpt_epoch_{epoch}.pt")
+        ckpt_path = os.path.join(SAVE_DIR, f"two_tower_ckpt{epoch}.pt")
         print(f"Saving checkpoint: {ckpt_path}")
         torch.save(model.state_dict(), ckpt_path)
 
@@ -406,8 +406,7 @@ def main() -> None:
                f"gap/test": full_test["gap"]},
         }, step=step)
 
-    # 5) Save and finish
-    torch.save(model.state_dict(), os.path.join(SAVE_DIR, "two_tower_final.pt"))
+    # finish training
     wandb.finish()
 
 

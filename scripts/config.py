@@ -50,5 +50,5 @@ WANDB_PROJECT: str = "two-tower-retrieval"
 
 # ─── 9. Save dir ─────────────────────────────────────────────
 
-SAVE_DIR = os.path.join(os.path.dirname(__file__), "..", "checkpoints")
+SAVE_DIR: str = os.path.join(os.path.dirname(__file__), "..", "outputs")
 os.makedirs(SAVE_DIR, exist_ok=True)

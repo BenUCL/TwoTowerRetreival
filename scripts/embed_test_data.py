@@ -55,8 +55,8 @@ def main() -> None:
 
     # Save embeddings and associated texts
     os.makedirs(SAVE_DIR, exist_ok=True)
-    np.save(os.path.join(SAVE_DIR, "test_passage_embs.npy"), emb_array)
-    with open(os.path.join(SAVE_DIR, "test_passage_texts.pkl"), "wb") as f:
+    np.save(os.path.join(SAVE_DIR, "test_passage_emb.npy"), emb_array)
+    with open(os.path.join(SAVE_DIR, "test_passage_text.pkl"), "wb") as f:
         pickle.dump(raw_texts, f)
 
 
