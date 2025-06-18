@@ -1,6 +1,7 @@
 # Two-Tower Retrieval Model
+This project tackles a search and retrieval problem. We take the open source MS MARCO dataset, curated by Bing, and train a model to embed new documents and search these with queries. 
 
-This project implements a Two-Tower neural retrieval model for the MS MARCO dataset. Queries and their associated positive passages are encoded separately via two separate RNN encoders, and training uses a custom triplet loss with dynamic in-batch negatives.
+Queries and their associated positive passages are encoded separately via two separate RNN encoders, and training uses a custom contrastive triplet loss with dynamic in-batch negatives. Once training is completed, the test portion of the data is embedded and stored to disk. New quieries are then embedded and search across the document embeddings applied via dot product.
 
 ---
 
@@ -30,8 +31,7 @@ This project implements a Two-Tower neural retrieval model for the MS MARCO data
 │   ├── dataloader.py            # Data loading & processing
 │   ├── train.py                 # Training loop, model, metrics
 │   ├── embed_test_data.py       # Precompute test-passage embeddings
-│   ├── search.py                # Query encoding & brute-force search
-│   └── __pycache__/
+│   └── search.py                # Query encoding & brute-force search
 └── README.md                    # This file
 ```
 
@@ -74,13 +74,15 @@ Drive: [https://drive.google.com/drive/folders/1Qqkc7l10M8cFcyjlMhZ1\_Ll0Ipn-w3w
 
 ## 📋 Dataset Info
 
-We use MS MARCO v2.1 splits saved as Parquet in `data/`.
+We use MS MARCO v2.1 train, validation and test splits saved as Parquet in `data/`.
 
 | Column                  | Type          | Notes                                 |
 | ----------------------- | ------------- | ------------------------------------- |
 | `query`                 | string        | Raw user query                        |
 | `passages.passage_text` | list[strings] | 10 candidate passages per query       |
 | `passages.is_selected`  | list[ints]    | Labels (unused; all treated positive) |
+
+See the notebooks section below for instructions on how to download this.
 
 ---
 
@@ -126,12 +128,15 @@ python -m scripts/train
 python -m scripts.embed_test_data
 ```
 
-This reads `data/ms_marco_test.parquet` and saves to `outputs/`:
+This reads the unseen test stored in `data/ms_marco_test.parquet`, uses the trained model to embed these and saves the outputs to `outputs/`:
 
 - `test_passage_embs.npy`: [150k, H] float32 array
 - `test_passage_texts.pkl`: list of 150k raw strings
+As mentioned above, these are precomputed and available on google drive.
+
 
 ### 2. Search queries
+Now we enter a query in natural language and search the documents. The model will embed this query and do the dot product search. Here's an example query and output:
 
 ```bash
 python -m scripts.search --query "best football player" --top_k 5
@@ -164,4 +169,11 @@ Top 5 results for query: "best football player"
 ## 📚 Citation
 
 > MS MARCO: [https://huggingface.co/datasets/microsoft/ms\_marco](https://huggingface.co/datasets/microsoft/ms_marco)
+
+---
+
+## Some nice to do's which would be good to add
+1. We could extract actual queries from the test data, run these, and compare the recall of the actual documents bing found.
+2. Implement a second model which focuses on precision. The first could be used to output a top 100, the second could be used to pick the best outputs from this.
+
 
