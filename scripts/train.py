@@ -386,7 +386,13 @@ def main() -> None:
         avg_loss = epoch_loss / len(train_loader)
         print(f"Epoch {epoch} done — avg loss {avg_loss:.4f}")
 
+        # Save checkpoint immediately
+        ckpt_path = os.path.join(SAVE_DIR, f"ckpt_epoch_{epoch}.pt")
+        print(f"Saving checkpoint: {ckpt_path}")
+        torch.save(model.state_dict(), ckpt_path)
+
         # end-of-epoch full eval
+        print("Running end-of-epoch evaluation")
         full_val = evaluate(val_loader, model, loss_fn)
         full_test = evaluate(test_loader, model, loss_fn)
         wandb.log({
