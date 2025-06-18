@@ -1,0 +1,9 @@
+data/
+data/glove.6B.200d.txt
+checkpoints/
+scratch/
+.env
+wandb/
+backend/__pycache__
+venv/
+*__pycache__*
